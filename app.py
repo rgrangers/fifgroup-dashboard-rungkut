@@ -294,10 +294,6 @@ for tab, prod_name in zip(prod_tabs, produk_sel):
                     ].iloc[0]
                 metric_row(r, prev, g, p, prod_name)
 
-st.caption(
-    "Setiap produk dihitung terhadap Grand Total produk itu sendiri pada kelompok (C0 atau C1) dan bulan yang sama. "
-    "Klik tab produk untuk berpindah antar produk. " + ARAH_CAPTION
-)
 
 st.divider()
 
