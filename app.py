@@ -70,10 +70,15 @@ with logo_col:
     else:
         st.markdown("**FIFGROUP**  \n*member of ASTRA*")
 
-
+with title_col:
+    st.title("Analisis Pelunasan, Pickup, Rollback, Rolling & Settle")
+    st.caption(
+        "Dashboard interaktif C0 & C1 per produk (MMU, MPF, NMC, REFI) berdasarkan data B7, B8, dan B9. "
+        "Seluruh amount dalam Rupiah (Sum of PKK_AW)."
+    )
 
 if os.path.exists(LOGO_PATH):
-    st.sidebar.image(LOGO_PATH, width=70)
+    st.sidebar.image(LOGO_PATH, width=90)
 
 # ============================================================
 # DATA (dari pivot, urutan nilai: Pelunasan, Pickup, Rollback, Rolling, Settle)
@@ -209,7 +214,10 @@ def metric_row(r, prev, g, p, label):
             help=f"Amount {status} {label} {g} {p}: {rupiah(r[status])}"
         )
 
-
+ARAH_CAPTION = (
+    "Warna selisih: hijau = membaik, merah = memburuk. "
+    "Higher is better: Pelunasan, Rollback, Settle. Lower is better: Pickup, Rolling."
+)
 
 # ============================================================
 # SIDEBAR
@@ -256,7 +264,10 @@ for i, p in enumerate(periods_sel):
             ].iloc[0]
         metric_row(r, prev, g, p, "")
 
-
+st.caption(
+    "Angka kecil = selisih terhadap bulan sebelumnya dalam poin persentase. "
+    + ARAH_CAPTION + " Arahkan kursor ke angka untuk melihat amount-nya."
+)
 
 st.divider()
 
@@ -283,6 +294,10 @@ for tab, prod_name in zip(prod_tabs, produk_sel):
                     ].iloc[0]
                 metric_row(r, prev, g, p, prod_name)
 
+st.caption(
+    "Setiap produk dihitung terhadap Grand Total produk itu sendiri pada kelompok (C0 atau C1) dan bulan yang sama. "
+    "Klik tab produk untuk berpindah antar produk. " + ARAH_CAPTION
+)
 
 st.divider()
 
