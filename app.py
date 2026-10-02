@@ -209,10 +209,7 @@ def metric_row(r, prev, g, p, label):
             help=f"Amount {status} {label} {g} {p}: {rupiah(r[status])}"
         )
 
-ARAH_CAPTION = (
-    "Warna selisih: hijau = membaik, merah = memburuk. "
-    "Higher is better: Pelunasan, Rollback, Settle. Lower is better: Pickup, Rolling."
-)
+
 
 # ============================================================
 # SIDEBAR
