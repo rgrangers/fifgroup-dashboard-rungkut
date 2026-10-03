@@ -71,10 +71,11 @@ with logo_col:
         st.markdown("**FIFGROUP**  \n*member of ASTRA*")
 
 with title_col:
-    st.title("Analisis Pelunasan, Pickup, Rollback, Rolling & Settle")
+    st.title("Analisis (Pelunasan + Pickup), Rollback, Rolling & Settle")
     st.caption(
         "Dashboard interaktif C0 & C1 per produk (MMU, MPF, NMC, REFI) berdasarkan data B7, B8, dan B9. "
-        "Seluruh amount dalam Rupiah (Sum of PKK_AW)."
+        "Seluruh amount dalam Rupiah (Sum of PKK_AW). "
+        "Pelunasan + Pickup = (Pelunasan + Pickup) / Grand Total."
     )
 
 if os.path.exists(LOGO_PATH):
@@ -84,15 +85,15 @@ if os.path.exists(LOGO_PATH):
 # DATA (dari pivot, urutan nilai: Pelunasan, Pickup, Rollback, Rolling, Settle)
 # Sel kosong pada pivot = 0
 # ============================================================
-STATUSES = ["Pelunasan", "Pickup", "Rollback", "Rolling", "Settle"]
-PCT_STATUSES = STATUSES
+STATUSES = ["Pelunasan", "Pickup", "Rollback", "Rolling", "Settle"]  # urutan data mentah di RAW
+GAB = "Pelunasan + Pickup"                                            # gabungan Pelunasan & Pickup
+PCT_STATUSES = [GAB, "Rollback", "Rolling", "Settle"]                 # status yang ditampilkan
 PERIODES = ["B7", "B8", "B9"]
 PRODUKS = ["MMU", "MPF", "NMC", "REFI"]
 
 # Arah penilaian tiap status: True = higher is better, False = lower is better
 HIGHER_BETTER = {
-    "Pelunasan": True,
-    "Pickup": False,
+    GAB: True,
     "Rollback": True,
     "Rolling": False,
     "Settle": True,
@@ -153,6 +154,7 @@ for periode_k, groups_k in RAW.items():
                          **dict(zip(STATUSES, vals))})
 raw_df = pd.DataFrame(rows)
 raw_df["Grand Total"] = raw_df[STATUSES].sum(axis=1)
+raw_df[GAB] = raw_df["Pelunasan"] + raw_df["Pickup"]
 raw_df["Pembagi"] = raw_df["Grand Total"]  # penyebut persentase = Grand Total baris itu
 
 # ============================================================
@@ -169,7 +171,7 @@ def delta_text(d):
     return f"{d:+.2f} poin".replace(".", ",")
 
 COLORS_GROUP = {"C0": "#2563EB", "C1": "#F97316"}  # C0 biru, C1 oranye
-COLORS_STATUS = ["#94A3B8", "#0EA5E9", "#EF4444", "#F59E0B", "#10B981"]
+COLORS_STATUS = ["#0EA5E9", "#EF4444", "#F59E0B", "#10B981"]  # urut sesuai PCT_STATUSES
 COLORS_PRODUK = {"MMU": "#2563EB", "MPF": "#10B981", "NMC": "#F59E0B", "REFI": "#8B5CF6"}
 
 def style_fig(fig, pct=False, amount=False):
@@ -190,7 +192,8 @@ def style_fig(fig, pct=False, amount=False):
 
 def aggregate(frame, by):
     """Jumlahkan amount & pembagi, lalu hitung persentase (bukan rata-rata persentase)."""
-    g = frame.groupby(by, as_index=False)[STATUSES + ["Grand Total", "Pembagi"]].sum()
+    cols = STATUSES + [GAB, "Grand Total", "Pembagi"]
+    g = frame.groupby(by, as_index=False)[cols].sum()
     for s in PCT_STATUSES:
         g[f"{s} %"] = g[s] / g["Pembagi"] * 100
     return g
@@ -202,21 +205,30 @@ def kualitas(status, d):
     return "membaik" if (d > 0) == HIGHER_BETTER[status] else "memburuk"
 
 def metric_row(r, prev, g, p, label):
-    """Satu baris 5 metric persentase (dengan selisih vs bulan sebelumnya bila ada)."""
+    """Satu baris metric persentase (dengan selisih vs bulan sebelumnya bila ada).
+    Tooltip (?) menampilkan pembilang dan Grand Total sebagai pembagi."""
     st.markdown(f"**{g}**")
     cols = st.columns(len(PCT_STATUSES))
     for c, status in zip(cols, PCT_STATUSES):
         delta = None
         if prev is not None:
             delta = delta_text(r[f"{status} %"] - prev[f"{status} %"])
+        if status == GAB:
+            pembilang = (f"({rupiah(r['Pelunasan'])} + {rupiah(r['Pickup'])}) "
+                         f"= {rupiah(r[GAB])}")
+        else:
+            pembilang = rupiah(r[status])
         c.metric(
             status, pct_fmt(r[f"{status} %"]), delta=delta, delta_color=DELTA_COLOR[status],
-            help=f"Amount {status} {label} {g} {p}: {rupiah(r[status])}"
+            help=(f"{status} {label} {g} {p}  \n"
+                  f"Pembilang: {pembilang}  \n"
+                  f"Grand Total (pembagi): {rupiah(r['Pembagi'])}  \n"
+                  f"= {pct_fmt(r[f'{status} %'])}")
         )
 
 ARAH_CAPTION = (
     "Warna selisih: hijau = membaik, merah = memburuk. "
-    "Higher is better: Pelunasan, Rollback, Settle. Lower is better: Pickup, Rolling."
+    "Higher is better: Pelunasan + Pickup, Rollback, Settle. Lower is better: Rolling."
 )
 
 # ============================================================
@@ -266,7 +278,8 @@ for i, p in enumerate(periods_sel):
 
 st.caption(
     "Angka kecil = selisih terhadap bulan sebelumnya dalam poin persentase. "
-    + ARAH_CAPTION + " Arahkan kursor ke angka untuk melihat amount-nya."
+    + ARAH_CAPTION
+    + " Arahkan kursor ke tanda tanya (?) untuk melihat amount dan Grand Total pembaginya."
 )
 
 st.divider()
@@ -306,16 +319,18 @@ st.divider()
 # ============================================================
 st.subheader("Ringkasan Amount PKK_AW")
 
-k = fdf[STATUSES + ["Grand Total"]].sum()
+k = fdf[STATUSES + [GAB, "Grand Total"]].sum()
 a1, a2, a3 = st.columns(3)
 a1.metric("Grand Total", rupiah(k["Grand Total"]))
-a2.metric("Pelunasan", rupiah(k["Pelunasan"]))
-a3.metric("Pickup", rupiah(k["Pickup"]))
+a2.metric(
+    GAB, rupiah(k[GAB]),
+    help=f"Pelunasan {rupiah(k['Pelunasan'])} + Pickup {rupiah(k['Pickup'])}"
+)
+a3.metric("Rollback", rupiah(k["Rollback"]))
 
-b1, b2, b3 = st.columns(3)
-b1.metric("Rollback", rupiah(k["Rollback"]))
-b2.metric("Rolling", rupiah(k["Rolling"]))
-b3.metric("Settle", rupiah(k["Settle"]))
+b1, b2, _ = st.columns(3)
+b1.metric("Rolling", rupiah(k["Rolling"]))
+b2.metric("Settle", rupiah(k["Settle"]))
 
 st.caption("Amount menggunakan nilai Sum of PKK_AW dalam Rupiah, sesuai filter periode, kelompok, dan produk.")
 
@@ -324,7 +339,7 @@ st.divider()
 # ============================================================
 # 1. PERSENTASE PER STATUS PER PERIODE
 # ============================================================
-st.subheader("1. Persentase Pelunasan, Pickup, Rollback, Rolling & Settle per Periode")
+st.subheader("1. Persentase (Pelunasan + Pickup), Rollback, Rolling & Settle per Periode")
 
 long_period = monthly.melt(
     id_vars=["Periode", "Kelompok"],
@@ -345,14 +360,14 @@ fig_period.update_traces(texttemplate="%{text:.2f}%", textposition="outside", cl
 fig_period.update_yaxes(matches=None, showticklabels=True)
 fig_period.update_layout(height=460)
 st.plotly_chart(style_fig(fig_period, pct=True), use_container_width=True)
-st.caption("Skala sumbu Y tiap status dibuat terpisah agar status dengan persentase kecil (mis. Pickup) tetap terbaca.")
+st.caption("Skala sumbu Y tiap status dibuat terpisah agar status dengan persentase kecil tetap terbaca.")
 
 # ============================================================
 # 2. PERSENTASE PER PRODUK
 # ============================================================
 st.subheader("2. Persentase per Produk")
 
-status_prod = st.selectbox("Pilih status", PCT_STATUSES, index=1, key="status_prod")
+status_prod = st.selectbox("Pilih status", PCT_STATUSES, index=0, key="status_prod")
 col_prod = f"{status_prod} %"
 
 fig_prod = px.bar(
@@ -376,7 +391,7 @@ st.caption(
 # ============================================================
 st.subheader("3. Trend Persentase per Produk")
 
-status_trend = st.selectbox("Pilih indikator", PCT_STATUSES, index=1, key="status_trend")
+status_trend = st.selectbox("Pilih indikator", PCT_STATUSES, index=0, key="status_trend")
 col_trend = f"{status_trend} %"
 
 fig_trend = px.line(
@@ -399,7 +414,7 @@ st.caption(
 st.subheader("4. Komposisi Amount PKK_AW per Status")
 
 amount_long = monthly.melt(
-    id_vars=["Periode", "Kelompok"], value_vars=STATUSES,
+    id_vars=["Periode", "Kelompok"], value_vars=PCT_STATUSES,
     var_name="Status", value_name="Amount"
 )
 
@@ -407,7 +422,7 @@ fig_amount = px.bar(
     amount_long, x="Periode", y="Amount", color="Status",
     facet_col="Kelompok", barmode="stack",
     color_discrete_sequence=COLORS_STATUS,
-    category_orders={"Status": STATUSES, "Kelompok": ["C0", "C1"], "Periode": PERIODES},
+    category_orders={"Status": PCT_STATUSES, "Kelompok": ["C0", "C1"], "Periode": PERIODES},
     labels={"Amount": "PKK_AW (Rp)"}
 )
 st.plotly_chart(style_fig(fig_amount, amount=True), use_container_width=True)
@@ -427,16 +442,17 @@ st.dataframe(pct_table, use_container_width=True, hide_index=True)
 # ============================================================
 st.subheader("6. Data Detail Amount")
 
-detail_cols = ["Periode", "Kelompok", "Produk"] + STATUSES + ["Grand Total", "Pembagi"]
+amount_cols = STATUSES + [GAB, "Grand Total", "Pembagi"]
+detail_cols = ["Periode", "Kelompok", "Produk"] + amount_cols
 detail = fdf.sort_values(["Periode", "Kelompok", "Produk"])[detail_cols].copy()
-for c in STATUSES + ["Grand Total", "Pembagi"]:
+for c in amount_cols:
     detail[c] = detail[c].apply(rupiah)
-amount_cfg = {
-    c: st.column_config.TextColumn(c, width="medium")
-    for c in STATUSES + ["Grand Total", "Pembagi"]
-}
+amount_cfg = {c: st.column_config.TextColumn(c, width="medium") for c in amount_cols}
 st.dataframe(detail, use_container_width=True, hide_index=True, column_config=amount_cfg)
-st.caption("Kolom Pembagi = Grand Total kelompok (C0 atau C1) yang dipakai sebagai penyebut persentase.")
+st.caption(
+    "Kolom Pembagi = Grand Total yang dipakai sebagai penyebut persentase. "
+    "Pelunasan + Pickup = Pelunasan dan Pickup dijumlahkan."
+)
 
 # ============================================================
 # 7. INSIGHT
@@ -448,7 +464,7 @@ st.markdown("### Sorotan")
 for g in groups:
     sub = monthly[monthly["Kelompok"] == g]
     st.markdown(f"**{g}**")
-    for s in STATUSES:
+    for s in PCT_STATUSES:
         col = f"{s} %"
         if HIGHER_BETTER[s]:
             best = sub.loc[sub[col].idxmax()]
@@ -469,16 +485,18 @@ for i, p in enumerate(periods_sel):
     st.markdown(f"#### {p}")
     for g in groups:
         r = monthly[(monthly["Periode"] == p) & (monthly["Kelompok"] == g)].iloc[0]
-        st.write(
-            f"**{g}:** "
-            f"Pelunasan {pct_fmt(r['Pelunasan %'])} ({rupiah(r['Pelunasan'])}), "
-            f"Pickup {pct_fmt(r['Pickup %'])} ({rupiah(r['Pickup'])}), "
-            f"Rollback {pct_fmt(r['Rollback %'])} ({rupiah(r['Rollback'])}), "
-            f"Rolling {pct_fmt(r['Rolling %'])} ({rupiah(r['Rolling'])}), "
-            f"Settle {pct_fmt(r['Settle %'])} ({rupiah(r['Settle'])})."
+        ringkas = ", ".join(
+            f"{s} {pct_fmt(r[f'{s} %'])} ({rupiah(r[s])})" for s in PCT_STATUSES
         )
+        st.write(f"**{g}:** {ringkas}.")
 
         sub = prod_df[(prod_df["Periode"] == p) & (prod_df["Kelompok"] == g)]
+        top_gab = sub.loc[sub[f"{GAB} %"].idxmax()]
+        if top_gab[f"{GAB} %"] > 0:
+            st.write(
+                f"• {GAB} tertinggi (baik) pada produk **{top_gab['Produk']}**: "
+                f"{pct_fmt(top_gab[f'{GAB} %'])} ({rupiah(top_gab[GAB])})."
+            )
         top_rb = sub.loc[sub["Rollback %"].idxmax()]
         if top_rb["Rollback %"] > 0:
             st.write(
@@ -496,7 +514,7 @@ for i, p in enumerate(periods_sel):
             prev_p = periods_sel[i - 1]
             pr = monthly[(monthly["Periode"] == prev_p) & (monthly["Kelompok"] == g)].iloc[0]
             parts = []
-            for s in STATUSES:
+            for s in PCT_STATUSES:
                 d = r[f"{s} %"] - pr[f"{s} %"]
                 parts.append(f"{s} {kualitas(s, d)} ({delta_text(d)})")
             st.write(f"• Dibanding {prev_p}: " + ", ".join(parts) + ".")
